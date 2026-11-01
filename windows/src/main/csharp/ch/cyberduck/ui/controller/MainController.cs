@@ -49,6 +49,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reactive.Concurrency;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.ServiceModel;
 using System.ServiceModel.Description;
@@ -196,6 +197,29 @@ namespace Ch.Cyberduck.Ui.Controller
         public static bool ApplicationShouldTerminateAfterDonationPrompt()
         {
             Logger.debug("ApplicationShouldTerminateAfterDonationPrompt");
+            License l = LicenseFactory.find();
+            if (!l.verify())
+            {
+                string appVersion = Assembly.GetExecutingAssembly().GetName().Version.ToString();
+                String lastversion = PreferencesFactory.get().getProperty("donate.reminder");
+                if (appVersion.Equals(lastversion))
+                {
+                    // Do not display if same version is installed
+                    return true;
+                }
+
+                DateTime nextReminder = new DateTime(PreferencesFactory.get().getLong("donate.reminder.date"));
+                // Display prompt every n days
+                nextReminder.AddDays(PreferencesFactory.get().getLong("donate.reminder.interval"));
+                Logger.debug("Next reminder: " + nextReminder);
+                // Display after upgrade
+                if (nextReminder.CompareTo(DateTime.Now) == 1)
+                {
+                    // Do not display if shown in the reminder interval
+                    return true;
+                }
+                ObjectFactory.GetInstance<IDonationController>().Show();
+            }
             return true;
         }
 

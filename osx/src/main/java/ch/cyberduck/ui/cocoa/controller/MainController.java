@@ -55,6 +55,7 @@ import ch.cyberduck.core.ctera.CteraProtocol;
 import ch.cyberduck.core.exception.AccessDeniedException;
 import ch.cyberduck.core.exception.BackgroundException;
 import ch.cyberduck.core.exception.HostParserException;
+import ch.cyberduck.core.importer.*;
 import ch.cyberduck.core.local.Application;
 import ch.cyberduck.core.local.BrowserLauncherFactory;
 import ch.cyberduck.core.local.TemporaryFileServiceFactory;
@@ -102,7 +103,9 @@ import java.nio.charset.Charset;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.Date;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -150,6 +153,11 @@ public class MainController extends BundleController implements NSApplication.De
         = new ArrayList<BrowserController>();
 
     private final NSWorkspace workspace = NSWorkspace.sharedWorkspace();
+
+    /**
+     * Display donation reminder dialog
+     */
+    private boolean displayDonationPrompt = true;
 
     @Outlet
     private NSMenu applicationMenu;
@@ -994,6 +1002,8 @@ public class MainController extends BundleController implements NSApplication.De
                 return null;
             }
         });
+        // Import thirdparty bookmarks.
+        this.background(new ImporterBackgroundAction(bookmarks, bookmarksSemaphore));
         final CrashReporter reporter = CrashReporter.create();
         log.info("Check for crash report");
         reporter.checkForCrash(preferences.getProperty("website.crash"));
@@ -1097,6 +1107,33 @@ public class MainController extends BundleController implements NSApplication.De
 
     public NSUInteger applicationShouldTerminateAfterDonationPrompt(final NSApplication app) {
         log.debug("applicationShouldTerminateAfterDonationPrompt");
+        if(!displayDonationPrompt) {
+            // Already displayed
+            return NSApplication.NSTerminateNow;
+        }
+        final License key = LicenseFactory.find();
+        if(!key.verify()) {
+            final String lastversion = preferences.getProperty("donate.reminder");
+            if(NSBundle.mainBundle().infoDictionary().objectForKey("CFBundleShortVersionString").toString().equals(lastversion)) {
+                // Do not display if same version is installed
+                return NSApplication.NSTerminateNow;
+            }
+            // Display after upgrade
+            final Calendar nextreminder = Calendar.getInstance();
+            nextreminder.setTimeInMillis(preferences.getLong("donate.reminder.date"));
+            // Display prompt every n days
+            nextreminder.add(Calendar.DAY_OF_YEAR, preferences.getInteger("donate.reminder.interval"));
+            log.debug("Next reminder {}", nextreminder.getTime().toString());
+            if(nextreminder.getTime().after(new Date(System.currentTimeMillis()))) {
+                // Do not display if shown in the reminder interval
+                return NSApplication.NSTerminateNow;
+            }
+            // Make sure prompt is not loaded twice upon next quit event
+            displayDonationPrompt = false;
+            this.alert(new DonateAlertController(app));
+            // Delay application termination. Dismissing the donation dialog will reply to quit.
+            return NSApplication.NSTerminateLater;
+        }
         return NSApplication.NSTerminateNow;
     }
 
@@ -1125,7 +1162,10 @@ public class MainController extends BundleController implements NSApplication.De
     }
 
     @Action
-    public void applicationWillRestartAfterUpdate(ID updater) { }
+    public void applicationWillRestartAfterUpdate(ID updater) {
+        // Disable donation prompt after udpate install
+        displayDonationPrompt = false;
+    }
 
     /**
      * We are not a Windows application. Long live the application wide menu bar.
@@ -1252,6 +1292,80 @@ public class MainController extends BundleController implements NSApplication.De
     @Action
     public void workspaceWillSleep(NSNotification notification) {
         log.debug("Workspace will sleep with notification {}", notification);
+    }
+
+    private final class ImporterBackgroundAction extends AbstractBackgroundAction<Void> {
+        private final Preferences preferences = PreferencesFactory.get();
+
+        private final AbstractHostCollection bookmarks;
+        private final List<ThirdpartyBookmarkCollection> collections;
+        private final CountDownLatch lock;
+
+        public ImporterBackgroundAction(final AbstractHostCollection bookmarks, final CountDownLatch lock) {
+            this(bookmarks, lock, Arrays.asList(
+                new Transmit5BookmarkCollection(), new Transmit4BookmarkCollection(), new FilezillaBookmarkCollection(), new FetchBookmarkCollection(),
+                new FlowBookmarkCollection(), new InterarchyBookmarkCollection(), new CrossFtpBookmarkCollection(), new FireFtpBookmarkCollection(),
+                new Expandrive3BookmarkCollection(), new Expandrive4BookmarkCollection(), new Expandrive5BookmarkCollection(), new Expandrive6BookmarkCollection(),
+                new Expandrive7BookmarkCollection(), new CloudMounterBookmarkCollection()));
+        }
+
+        public ImporterBackgroundAction(final AbstractHostCollection bookmarks, final CountDownLatch lock, final List<ThirdpartyBookmarkCollection> collections) {
+            this.bookmarks = bookmarks;
+            this.lock = lock;
+            this.collections = collections;
+        }
+
+        @Override
+        public Void run() {
+            for(ThirdpartyBookmarkCollection t : collections) {
+                if(!t.isInstalled()) {
+                    log.info("No application installed for {}", t.getBundleIdentifier());
+                    continue;
+                }
+                try {
+                    t.load();
+                }
+                catch(AccessDeniedException e) {
+                    log.warn("Failure {} loading bookmarks from {}", e, t);
+                }
+                if(t.isEmpty()) {
+                    // Flag as imported
+                    preferences.setProperty(t.getConfiguration(), true);
+                }
+            }
+            Uninterruptibles.awaitUninterruptibly(lock);
+            return null;
+        }
+
+        @Override
+        public void cleanup() {
+            for(ThirdpartyBookmarkCollection t : collections) {
+                t.filter(bookmarks);
+                if(t.isEmpty()) {
+                    preferences.setProperty(t.getConfiguration(), true);
+                    continue;
+                }
+                final NSAlert alert = NSAlert.alert(
+                    MessageFormat.format(LocaleFactory.localizedString("Import {0} Bookmarks", "Configuration"), t.getName()),
+                    MessageFormat.format(LocaleFactory.localizedString("{0} bookmarks found. Do you want to add these to your bookmarks?", "Configuration"), t.size()),
+                    LocaleFactory.localizedString("Import", "Configuration"), //default
+                    null, //other
+                    LocaleFactory.localizedString("Cancel", "Configuration"));
+                alert.setShowsSuppressionButton(true);
+                alert.suppressionButton().setTitle(LocaleFactory.localizedString("Don't ask again", "Configuration"));
+                alert.setAlertStyle(NSAlert.NSInformationalAlertStyle);
+                int choice = MainController.this.alert(new SystemAlertController(alert)); //alternate
+                if(alert.suppressionButton().state() == NSCell.NSOnState) {
+                    // Never show again.
+                    preferences.setProperty(t.getConfiguration(), true);
+                }
+                if(choice == SheetCallback.DEFAULT_OPTION) {
+                    bookmarks.addAll(t);
+                    // Flag as imported
+                    preferences.setProperty(t.getConfiguration(), true);
+                }
+            }
+        }
     }
 
     @Override
