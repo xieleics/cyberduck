@@ -1286,6 +1286,7 @@ public class MainController extends BundleController implements NSApplication.De
                 }
                 if(!t.isInstalled()) {
                     log.info("No application installed for {}", t.getBundleIdentifier());
+                    preferences.setProperty(t.getConfiguration(), true);
                     continue;
                 }
                 try {
