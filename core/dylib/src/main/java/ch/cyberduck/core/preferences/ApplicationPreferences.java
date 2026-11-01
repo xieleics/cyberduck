@@ -60,9 +60,9 @@ public class ApplicationPreferences extends UserDefaultsPreferences {
     protected void setFactories() {
         super.setFactories();
 
-        this.setDefault("factory.supportdirectoryfinder.class", MigratingSecurityApplicationGroupSupportDirectoryFinder.class.getName());
+        this.setDefault("factory.supportdirectoryfinder.class", ApplicationSupportDirectoryFinder.class.getName());
         this.setDefault("factory.logdirectoryfinder.class", LibraryLogDirectoryFinder.class.getName());
-        this.setDefault("factory.localsupportdirectoryfinder.class", MigratingSecurityApplicationGroupSupportDirectoryFinder.class.getName());
+        this.setDefault("factory.localsupportdirectoryfinder.class", ApplicationSupportDirectoryFinder.class.getName());
         this.setDefault("factory.applicationresourcesfinder.class", BundleApplicationResourcesFinder.class.getName());
         if(Factory.Platform.osversion.matches("(10|11|12)\\..*")) {
             this.setDefault("factory.applicationloginregistry.class", SharedFileListApplicationLoginRegistry.class.getName());
