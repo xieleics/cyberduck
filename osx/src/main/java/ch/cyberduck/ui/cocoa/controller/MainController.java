@@ -1330,6 +1330,10 @@ public class MainController extends BundleController implements NSApplication.De
                     // Flag as imported
                     preferences.setProperty(t.getConfiguration(), true);
                 }
+                else {
+                    // Do not scan again after the user declines the import.
+                    preferences.setProperty(t.getConfiguration(), true);
+                }
             }
         }
     }
