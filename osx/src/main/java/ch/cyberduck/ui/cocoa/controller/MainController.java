@@ -55,7 +55,6 @@ import ch.cyberduck.core.ctera.CteraProtocol;
 import ch.cyberduck.core.exception.AccessDeniedException;
 import ch.cyberduck.core.exception.BackgroundException;
 import ch.cyberduck.core.exception.HostParserException;
-import ch.cyberduck.core.importer.*;
 import ch.cyberduck.core.local.Application;
 import ch.cyberduck.core.local.BrowserLauncherFactory;
 import ch.cyberduck.core.local.TemporaryFileServiceFactory;
@@ -995,8 +994,6 @@ public class MainController extends BundleController implements NSApplication.De
                 return null;
             }
         });
-        // Import thirdparty bookmarks.
-        this.background(new ImporterBackgroundAction(bookmarks, bookmarksSemaphore));
         final CrashReporter reporter = CrashReporter.create();
         log.info("Check for crash report");
         reporter.checkForCrash(preferences.getProperty("website.crash"));
@@ -1255,88 +1252,6 @@ public class MainController extends BundleController implements NSApplication.De
     @Action
     public void workspaceWillSleep(NSNotification notification) {
         log.debug("Workspace will sleep with notification {}", notification);
-    }
-
-    private final class ImporterBackgroundAction extends AbstractBackgroundAction<Void> {
-        private final Preferences preferences = PreferencesFactory.get();
-
-        private final AbstractHostCollection bookmarks;
-        private final List<ThirdpartyBookmarkCollection> collections;
-        private final CountDownLatch lock;
-
-        public ImporterBackgroundAction(final AbstractHostCollection bookmarks, final CountDownLatch lock) {
-            this(bookmarks, lock, Arrays.asList(
-                new Transmit5BookmarkCollection(), new Transmit4BookmarkCollection(), new FilezillaBookmarkCollection(), new FetchBookmarkCollection(),
-                new FlowBookmarkCollection(), new InterarchyBookmarkCollection(), new CrossFtpBookmarkCollection(), new FireFtpBookmarkCollection(),
-                new Expandrive3BookmarkCollection(), new Expandrive4BookmarkCollection(), new Expandrive5BookmarkCollection(), new Expandrive6BookmarkCollection(),
-                new Expandrive7BookmarkCollection(), new CloudMounterBookmarkCollection()));
-        }
-
-        public ImporterBackgroundAction(final AbstractHostCollection bookmarks, final CountDownLatch lock, final List<ThirdpartyBookmarkCollection> collections) {
-            this.bookmarks = bookmarks;
-            this.lock = lock;
-            this.collections = collections;
-        }
-
-        @Override
-        public Void run() {
-            for(ThirdpartyBookmarkCollection t : collections) {
-                if(preferences.getBoolean(t.getConfiguration())) {
-                    continue;
-                }
-                if(!t.isInstalled()) {
-                    log.info("No application installed for {}", t.getBundleIdentifier());
-                    preferences.setProperty(t.getConfiguration(), true);
-                    continue;
-                }
-                try {
-                    t.load();
-                }
-                catch(AccessDeniedException e) {
-                    log.warn("Failure {} loading bookmarks from {}", e, t);
-                }
-                if(t.isEmpty()) {
-                    // Flag as imported
-                    preferences.setProperty(t.getConfiguration(), true);
-                }
-            }
-            Uninterruptibles.awaitUninterruptibly(lock);
-            return null;
-        }
-
-        @Override
-        public void cleanup() {
-            for(ThirdpartyBookmarkCollection t : collections) {
-                t.filter(bookmarks);
-                if(t.isEmpty()) {
-                    preferences.setProperty(t.getConfiguration(), true);
-                    continue;
-                }
-                final NSAlert alert = NSAlert.alert(
-                    MessageFormat.format(LocaleFactory.localizedString("Import {0} Bookmarks", "Configuration"), t.getName()),
-                    MessageFormat.format(LocaleFactory.localizedString("{0} bookmarks found. Do you want to add these to your bookmarks?", "Configuration"), t.size()),
-                    LocaleFactory.localizedString("Import", "Configuration"), //default
-                    null, //other
-                    LocaleFactory.localizedString("Cancel", "Configuration"));
-                alert.setShowsSuppressionButton(true);
-                alert.suppressionButton().setTitle(LocaleFactory.localizedString("Don't ask again", "Configuration"));
-                alert.setAlertStyle(NSAlert.NSInformationalAlertStyle);
-                int choice = MainController.this.alert(new SystemAlertController(alert)); //alternate
-                if(alert.suppressionButton().state() == NSCell.NSOnState) {
-                    // Never show again.
-                    preferences.setProperty(t.getConfiguration(), true);
-                }
-                if(choice == SheetCallback.DEFAULT_OPTION) {
-                    bookmarks.addAll(t);
-                    // Flag as imported
-                    preferences.setProperty(t.getConfiguration(), true);
-                }
-                else {
-                    // Do not scan again after the user declines the import.
-                    preferences.setProperty(t.getConfiguration(), true);
-                }
-            }
-        }
     }
 
     @Override
