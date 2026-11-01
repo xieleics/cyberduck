@@ -69,16 +69,12 @@ import ch.cyberduck.core.profiles.PeriodicProfilesUpdater;
 import ch.cyberduck.core.profiles.ProfilesUpdater;
 import ch.cyberduck.core.resources.IconCacheFactory;
 import ch.cyberduck.core.serializer.HostDictionary;
-import ch.cyberduck.core.sparkle.MenuItemSparkleUpdateHandler;
 import ch.cyberduck.core.threading.AbstractBackgroundAction;
 import ch.cyberduck.core.threading.DefaultBackgroundExecutor;
 import ch.cyberduck.core.transfer.DownloadTransfer;
 import ch.cyberduck.core.transfer.TransferItem;
 import ch.cyberduck.core.transfer.TransferOptions;
 import ch.cyberduck.core.transfer.UploadTransfer;
-import ch.cyberduck.core.updater.NotificationServiceUpdateHandler;
-import ch.cyberduck.core.updater.PeriodicUpdateChecker;
-import ch.cyberduck.core.updater.PeriodicUpdateCheckerFactory;
 import ch.cyberduck.core.urlhandler.SchemeHandler;
 import ch.cyberduck.core.urlhandler.SchemeHandlerFactory;
 import ch.cyberduck.ui.browser.BrowserColumn;
@@ -107,9 +103,7 @@ import java.nio.charset.Charset;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.Collections;
-import java.util.Date;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -146,9 +140,6 @@ public class MainController extends BundleController implements NSApplication.De
 
     private final Preferences preferences = PreferencesFactory.get();
 
-    private final PeriodicUpdateChecker updater
-        = PeriodicUpdateCheckerFactory.get(this);
-
     private final ProfilesUpdater profiles
         = new PeriodicProfilesUpdater(this);
 
@@ -160,11 +151,6 @@ public class MainController extends BundleController implements NSApplication.De
         = new ArrayList<BrowserController>();
 
     private final NSWorkspace workspace = NSWorkspace.sharedWorkspace();
-
-    /**
-     * Display donation reminder dialog
-     */
-    private boolean displayDonationPrompt = true;
 
     @Outlet
     private NSMenu applicationMenu;
@@ -282,19 +268,10 @@ public class MainController extends BundleController implements NSApplication.De
     }
 
     /**
-     * Remove software update menu item if no update feed available
+     * Disable the software update menu item
      */
     private void updateUpdateMenu() {
-        if(updater.hasUpdatePrivileges()) {
-            final NSMenuItem item = this.applicationMenu.itemAtIndex(new NSInteger(1));
-            updater.addHandler(new MenuItemSparkleUpdateHandler(item));
-            if(preferences.getBoolean("update.check.auto")) {
-                updater.addHandler(new NotificationServiceUpdateHandler(updater));
-            }
-        }
-        else {
-            this.applicationMenu.removeItemAtIndex(new NSInteger(1));
-        }
+        this.applicationMenu.removeItemAtIndex(new NSInteger(1));
     }
 
     public void setEncodingMenu(NSMenu encodingMenu) {
@@ -1023,15 +1000,6 @@ public class MainController extends BundleController implements NSApplication.De
         final CrashReporter reporter = CrashReporter.create();
         log.info("Check for crash report");
         reporter.checkForCrash(preferences.getProperty("website.crash"));
-        if(updater.hasUpdatePrivileges()) {
-            if(preferences.getBoolean("update.check")) {
-                final long next = preferences.getLong("update.check.timestamp") + preferences.getLong("update.check.interval") * 1000;
-                if(next < System.currentTimeMillis()) {
-                    updater.check(true);
-                }
-                updater.register();
-            }
-        }
         if(preferences.getBoolean("profiles.discovery.updater.enable")) {
             // Synchronize and register timer
             profiles.register();
@@ -1132,33 +1100,6 @@ public class MainController extends BundleController implements NSApplication.De
 
     public NSUInteger applicationShouldTerminateAfterDonationPrompt(final NSApplication app) {
         log.debug("applicationShouldTerminateAfterDonationPrompt");
-        if(!displayDonationPrompt) {
-            // Already displayed
-            return NSApplication.NSTerminateNow;
-        }
-        final License key = LicenseFactory.find();
-        if(!key.verify()) {
-            final String lastversion = preferences.getProperty("donate.reminder");
-            if(NSBundle.mainBundle().infoDictionary().objectForKey("CFBundleShortVersionString").toString().equals(lastversion)) {
-                // Do not display if same version is installed
-                return NSApplication.NSTerminateNow;
-            }
-            // Display after upgrade
-            final Calendar nextreminder = Calendar.getInstance();
-            nextreminder.setTimeInMillis(preferences.getLong("donate.reminder.date"));
-            // Display prompt every n days
-            nextreminder.add(Calendar.DAY_OF_YEAR, preferences.getInteger("donate.reminder.interval"));
-            log.debug("Next reminder {}", nextreminder.getTime().toString());
-            if(nextreminder.getTime().after(new Date(System.currentTimeMillis()))) {
-                // Do not display if shown in the reminder interval
-                return NSApplication.NSTerminateNow;
-            }
-            // Make sure prompt is not loaded twice upon next quit event
-            displayDonationPrompt = false;
-            this.alert(new DonateAlertController(app));
-            // Delay application termination. Dismissing the donation dialog will reply to quit.
-            return NSApplication.NSTerminateLater;
-        }
         return NSApplication.NSTerminateNow;
     }
 
@@ -1179,7 +1120,6 @@ public class MainController extends BundleController implements NSApplication.De
         // Remove notifications from center
         NotificationServiceFactory.get().unregister();
         // Disable update
-        updater.unregister();
         profiles.unregister();
         //Writing usage info
         preferences.setProperty("uses", preferences.getInteger("uses") + 1);
@@ -1188,10 +1128,7 @@ public class MainController extends BundleController implements NSApplication.De
     }
 
     @Action
-    public void applicationWillRestartAfterUpdate(ID updater) {
-        // Disable donation prompt after udpate install
-        displayDonationPrompt = false;
-    }
+    public void applicationWillRestartAfterUpdate(ID updater) { }
 
     /**
      * We are not a Windows application. Long live the application wide menu bar.
@@ -1203,7 +1140,6 @@ public class MainController extends BundleController implements NSApplication.De
 
     @Action
     public void updateMenuClicked(ID sender) {
-        updater.check(false);
     }
 
     /**
@@ -1224,7 +1160,6 @@ public class MainController extends BundleController implements NSApplication.De
         }
         switch(url) {
             case "x-cyberduck-action:update":
-                updater.check(false);
                 break;
             default:
                 String action = null;
@@ -1400,13 +1335,6 @@ public class MainController extends BundleController implements NSApplication.De
     public boolean validateMenuItem(final NSMenuItem item) {
         final Selector action = item.action();
         if(action.equals(Foundation.selector("updateMenuClicked:"))) {
-            if(updater.hasUpdatePrivileges()) {
-                if(item.representedObject() != null) {
-                    // Allow to run update when found
-                    return true;
-                }
-                return !updater.isUpdateInProgress();
-            }
             return false;
         }
         return true;

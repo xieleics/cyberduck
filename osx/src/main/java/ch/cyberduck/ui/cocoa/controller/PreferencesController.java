@@ -51,8 +51,6 @@ import ch.cyberduck.core.s3.S3EncryptionFeature;
 import ch.cyberduck.core.threading.DefaultMainAction;
 import ch.cyberduck.core.threading.WindowMainAction;
 import ch.cyberduck.core.transfer.TransferAction;
-import ch.cyberduck.core.updater.PeriodicUpdateChecker;
-import ch.cyberduck.core.updater.PeriodicUpdateCheckerFactory;
 import ch.cyberduck.core.urlhandler.SchemeHandlerFactory;
 import ch.cyberduck.ui.cocoa.view.BookmarkCell;
 
@@ -90,9 +88,6 @@ public class PreferencesController extends ToolbarWindowController {
 
     private final Preferences preferences
             = PreferencesFactory.get();
-
-    private final PeriodicUpdateChecker updater
-            = PeriodicUpdateCheckerFactory.get(this);
 
     private final ConnectionTimeout connectionTimeoutPreferences
             = ConnectionTimeoutFactory.get();
@@ -214,9 +209,6 @@ public class PreferencesController extends ToolbarWindowController {
         this.addPanel(views, new PreferencesLabel(PreferencesToolbarItem.connection), panelAdvanced);
         if(preferences.getBoolean("cryptomator.enable")) {
             this.addPanel(views, new PreferencesLabel(PreferencesToolbarItem.cryptomator), panelCryptomator);
-        }
-        if(updater.hasUpdatePrivileges()) {
-            this.addPanel(views, new PreferencesLabel(PreferencesToolbarItem.update), panelUpdate);
         }
         this.addPanel(views, new PreferencesLabel(PreferencesToolbarItem.language), panelLanguage);
         return views;
