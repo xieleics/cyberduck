@@ -39,7 +39,6 @@ import ch.cyberduck.binding.foundation.NSURL;
 import ch.cyberduck.binding.quicklook.QLPreviewPanel;
 import ch.cyberduck.binding.quicklook.QLPreviewPanelController;
 import ch.cyberduck.core.*;
-import ch.cyberduck.core.aquaticprime.LicenseFactory;
 import ch.cyberduck.core.bonjour.RendezvousCollection;
 import ch.cyberduck.core.editor.DefaultEditorListener;
 import ch.cyberduck.core.editor.Editor;
@@ -406,9 +405,6 @@ public class BrowserController extends WindowController implements NSToolbar.Del
         this.toolbar.setAutosavesConfiguration(true);
         this.window.setToolbar(toolbar);
         this.configureBrowserColumns();
-        if(!LicenseFactory.find().verify()) {
-            this.addDonateWindowTitle();
-        }
         this.selectBookmarks(BookmarkSwitchSegement.bookmarks);
     }
 
