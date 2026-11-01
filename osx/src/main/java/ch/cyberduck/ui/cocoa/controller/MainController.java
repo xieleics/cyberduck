@@ -69,16 +69,12 @@ import ch.cyberduck.core.profiles.PeriodicProfilesUpdater;
 import ch.cyberduck.core.profiles.ProfilesUpdater;
 import ch.cyberduck.core.resources.IconCacheFactory;
 import ch.cyberduck.core.serializer.HostDictionary;
-import ch.cyberduck.core.sparkle.MenuItemSparkleUpdateHandler;
 import ch.cyberduck.core.threading.AbstractBackgroundAction;
 import ch.cyberduck.core.threading.DefaultBackgroundExecutor;
 import ch.cyberduck.core.transfer.DownloadTransfer;
 import ch.cyberduck.core.transfer.TransferItem;
 import ch.cyberduck.core.transfer.TransferOptions;
 import ch.cyberduck.core.transfer.UploadTransfer;
-import ch.cyberduck.core.updater.NotificationServiceUpdateHandler;
-import ch.cyberduck.core.updater.PeriodicUpdateChecker;
-import ch.cyberduck.core.updater.PeriodicUpdateCheckerFactory;
 import ch.cyberduck.core.urlhandler.SchemeHandler;
 import ch.cyberduck.core.urlhandler.SchemeHandlerFactory;
 import ch.cyberduck.ui.browser.BrowserColumn;
@@ -143,9 +139,6 @@ public class MainController extends BundleController implements NSApplication.De
     public static final int keyAEResult = 757935405;
 
     private final Preferences preferences = PreferencesFactory.get();
-
-    private final PeriodicUpdateChecker updater
-        = PeriodicUpdateCheckerFactory.get(this);
 
     private final ProfilesUpdater profiles
         = new PeriodicProfilesUpdater(this);
@@ -275,19 +268,10 @@ public class MainController extends BundleController implements NSApplication.De
     }
 
     /**
-     * Remove software update menu item if no update feed available
+     * Disable the software update menu item
      */
     private void updateUpdateMenu() {
-        if(updater.hasUpdatePrivileges()) {
-            final NSMenuItem item = this.applicationMenu.itemAtIndex(new NSInteger(1));
-            updater.addHandler(new MenuItemSparkleUpdateHandler(item));
-            if(preferences.getBoolean("update.check.auto")) {
-                updater.addHandler(new NotificationServiceUpdateHandler(updater));
-            }
-        }
-        else {
-            this.applicationMenu.removeItemAtIndex(new NSInteger(1));
-        }
+        this.applicationMenu.removeItemAtIndex(new NSInteger(1));
     }
 
     public void setEncodingMenu(NSMenu encodingMenu) {
@@ -1016,15 +1000,6 @@ public class MainController extends BundleController implements NSApplication.De
         final CrashReporter reporter = CrashReporter.create();
         log.info("Check for crash report");
         reporter.checkForCrash(preferences.getProperty("website.crash"));
-        if(updater.hasUpdatePrivileges()) {
-            if(preferences.getBoolean("update.check")) {
-                final long next = preferences.getLong("update.check.timestamp") + preferences.getLong("update.check.interval") * 1000;
-                if(next < System.currentTimeMillis()) {
-                    updater.check(true);
-                }
-                updater.register();
-            }
-        }
         if(preferences.getBoolean("profiles.discovery.updater.enable")) {
             // Synchronize and register timer
             profiles.register();
@@ -1145,7 +1120,6 @@ public class MainController extends BundleController implements NSApplication.De
         // Remove notifications from center
         NotificationServiceFactory.get().unregister();
         // Disable update
-        updater.unregister();
         profiles.unregister();
         //Writing usage info
         preferences.setProperty("uses", preferences.getInteger("uses") + 1);
@@ -1166,7 +1140,6 @@ public class MainController extends BundleController implements NSApplication.De
 
     @Action
     public void updateMenuClicked(ID sender) {
-        updater.check(false);
     }
 
     /**
@@ -1187,7 +1160,6 @@ public class MainController extends BundleController implements NSApplication.De
         }
         switch(url) {
             case "x-cyberduck-action:update":
-                updater.check(false);
                 break;
             default:
                 String action = null;
@@ -1366,13 +1338,6 @@ public class MainController extends BundleController implements NSApplication.De
     public boolean validateMenuItem(final NSMenuItem item) {
         final Selector action = item.action();
         if(action.equals(Foundation.selector("updateMenuClicked:"))) {
-            if(updater.hasUpdatePrivileges()) {
-                if(item.representedObject() != null) {
-                    // Allow to run update when found
-                    return true;
-                }
-                return !updater.isUpdateInProgress();
-            }
             return false;
         }
         return true;
