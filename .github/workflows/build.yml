@@ -55,6 +55,17 @@ jobs:
         env:
           SKIP_SIGN: true
           JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=${{ runner.temp }}
+      - name: Create macOS disk image
+        if: runner.os == 'macOS'
+        run: hdiutil create -volname Cyberduck -srcfolder osx/target/Cyberduck.app -ov -format UDZO osx/target/Cyberduck.dmg
+      - name: Upload macOS disk image
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Cyberduck-dmg-macos
+          path: osx/target/Cyberduck.dmg
+          if-no-files-found: error
+          retention-days: 14
       - name: Publish Test Report
         if: github.event.pull_request.head.repo.fork == false
         uses: ScalableCapital/action-surefire-report@v2
