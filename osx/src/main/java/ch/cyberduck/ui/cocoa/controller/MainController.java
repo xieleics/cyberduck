@@ -1309,6 +1309,9 @@ public class MainController extends BundleController implements NSApplication.De
         @Override
         public Void run() {
             for(ThirdpartyBookmarkCollection t : collections) {
+                if(preferences.getBoolean(t.getConfiguration())) {
+                    continue;
+                }
                 if(!t.isInstalled()) {
                     log.info("No application installed for {}", t.getBundleIdentifier());
                     continue;
